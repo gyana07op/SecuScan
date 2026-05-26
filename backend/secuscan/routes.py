@@ -14,6 +14,7 @@ import asyncio
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
+
 def parse_json_fields(rows: List[Dict], fields: List[str]) -> List[Dict]:
     """Helper to parse stringified JSON fields from SQLite."""
     parsed = []
@@ -1752,6 +1753,11 @@ async def run_workflow_once(workflow_id: str, owner: str = Depends(get_current_o
             consent_granted=True,
             owner_id=owner,
         )
+        can_acquire, _ = await concurrent_limiter.acquire(task_id)
+        if not can_acquire:
+            logger.warning("Workflow %s: concurrency limit reached, task %s will not run", workflow_id, task_id)
+            await executor.mark_task_failed(task_id, reason="Concurrency limit reached")
+            continue
         asyncio.create_task(executor.execute_task(task_id))
         created_task_ids.append(task_id)
     await db.execute("UPDATE workflows SET last_run_at = datetime('now') WHERE id = ?", (workflow_id,))
